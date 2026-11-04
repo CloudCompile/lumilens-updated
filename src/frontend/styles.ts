@@ -937,5 +937,20 @@ export function addLumiLensStyles(ctx: SpindleFrontendContext): () => void {
     .ll-create-greeting-index { font-size: 11px; color: var(--ll-dim); padding-top: 10px; min-width: 52px; }
     .ll-create-saved { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--ll-border); border-radius: var(--ll-radius); background: var(--ll-fill-subtle); }
     .ll-create-saved-title { font-size: 16px; font-weight: 700; color: var(--ll-text); }
+    .ll-create-section { display: flex; flex-direction: column; gap: 6px; }
+    .ll-create-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ll-create-count { width: auto; min-width: 112px; }
+    .ll-create-batch { display: flex; flex-direction: column; gap: 8px; }
+    .ll-create-batch-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border: 1px solid var(--ll-border);
+      border-radius: var(--ll-radius);
+      background: var(--ll-fill-subtle);
+    }
+    .ll-create-batch-art { width: 44px; height: 44px; flex: none; }
+    .ll-create-batch-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   `)
 }

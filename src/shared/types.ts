@@ -103,6 +103,13 @@ export interface CreateCardResult {
   images: CreateCardImages
 }
 
+/** Cards invented in one go by the surprise flow and saved straight away. */
+export interface CreateCardBatchResult {
+  cards: CreateCardResult[]
+  requested: number
+  failed: number
+}
+
 export interface ConnectionInfo {
   id: string
   name: string

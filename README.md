@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.1.2-purple" />
+  <img alt="version" src="https://img.shields.io/badge/version-v0.1.4-purple" />
 </p>
 
 I'm Ari. I have read every card in your library. Some of them twice, against my better judgment.
@@ -37,6 +37,19 @@ My corner of the sidebar. Everything else starts here.
   <img src="assets/screenshots/sidebar-menu.png" alt="The Ari sidebar tab" width="280" />
 </p>
 
+### Create a card
+
+The other side of the library. Instead of reading your cards, I write a new one.
+
+- **From a seed.** One line is enough. I match it against the cards you already keep, borrow their feel and your chat history with them, and draft the name, description, personality, scenario, first message, and tags. You read the draft before it becomes a card.
+- **Surprise me.** No seed at all. Pick one to five cards and I invent them from the gaps in your library, then save every one straight away. Each gets an avatar and lands in the library without a review step.
+- **Pick the model.** Both modes have a drafting model selector. Leave it on the default connection or point one card at a sharper model. It applies to that run, not to your saved settings.
+- **Art on demand.** After a card is saved I can generate a gallery set or an illustration for every greeting. The avatar is made when the card is.
+
+<p align="center">
+  <img src="assets/screenshots/sidebar-menu.png" alt="The Ari sidebar tab" width="280" />
+</p>
+
 ### Card Picker
 
 For when you cannot decide. Hit **Surprise me** and I close my eyes and point. Or pick a few categories, tell me what you are in the mood for, and I shortlist the likely fits. A model ranks that shortlist. Your whole library never goes to the model, only a handful of short excerpts. You get two at a time, each with my pitch. If they are wrong, ask for different ones.
@@ -62,7 +75,7 @@ Undo, reshuffle, and progress are all there. On desktop the arrow keys work: up 
 
 The boring part. Everything is collapsed until you need it.
 
-- **LLM connection.** One connection for everything, or a different one per action: Quick Pitch, Deep Dive, Tinder blurbs, and card search.
+- **LLM connection.** One connection for everything, or a different one per action: Quick Pitch, Deep Dive, Tinder blurbs, card search, and card creation. The Create card page can also pick a model per run.
 - **Cache.** Clear Quick Pitches, Deep Dives, or Tinder blurbs separately. Or warm the library: tick what you want, I estimate the tokens, and I write the missing pieces ahead of time. You can stop me halfway.
 - **Warm on create.** When a new char card lands in your library, I can write the kinds you tick in the background. Each kind is its own call, queued so a bulk import does not flood the provider. Parallel calls are a setting. Delete the card and I forget its cache too.
 - **Testing / Debug.** Testing mode makes Purge Mode only pretend to delete.
@@ -72,14 +85,15 @@ The boring part. Everything is collapsed until you need it.
 Add LumiLens as a Spindle extension from this repository, then reload Lumiverse.
 
 ```
-https://github.com/shirunick/lumilens
+https://github.com/CloudCompile/lumilens-updated
 ```
 
 Permissions I ask for:
 
 - `generation` so I can write pitches, deep dives, and blurbs.
-- `characters` so I can read your cards, and delete them in Purge Mode when you tell me to.
+- `characters` so I can read your cards, create new ones when you ask, and delete them in Purge Mode.
 - `images` so I can show card art.
+- `image_gen` so I can make avatars, galleries, and greeting art for the cards I write.
 - `chats` so Chat Mode can open or start a chat for you.
 
 ## Good to know

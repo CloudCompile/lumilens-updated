@@ -186,3 +186,18 @@ export const CREATE_SAVED: readonly string[] = [
   'The card is in your library now.',
   'There. A new card, written by me.',
 ]
+
+export const CREATE_SURPRISE_LOADING: readonly Line[] = [
+  {
+    title: 'Looking for the gaps.',
+    sub: 'Reading your library, then writing past it.',
+  },
+  {
+    title: 'Inventing company.',
+    sub: 'Every card gets saved the moment it is written.',
+  },
+  {
+    title: 'Finding the ones you did not know you wanted.',
+    sub: 'No seed, no review. They land in your library.',
+  },
+]

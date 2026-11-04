@@ -9,11 +9,14 @@ import {
 import { scoreCard, extractKeywords } from './picker'
 import {
   buildCreateCardMessages,
+  buildSurpriseCardMessages,
   parseCardDraft,
+  parseCardDraftBatch,
   type CreateCardPatterns,
 } from './prompts/create-card'
 import type {
   CharacterDraft,
+  CreateCardBatchResult,
   CreateCardContext,
   CreateCardImages,
   CreateCardResult,
@@ -104,6 +107,7 @@ export async function draftCard(input: {
   seed: string
   characterId?: string
   draft?: CharacterDraft
+  connectionId?: string | null
 }, userId?: string): Promise<{ draft: CharacterDraft; context: CreateCardContext }> {
   const seed = String(input.seed || '').trim()
   let sourceCharacterId: string | null = null
@@ -136,7 +140,7 @@ export async function draftCard(input: {
     patterns,
     previousDraft: input.draft ?? null,
   })
-  const text = await generateRaw(messages, userId, 'create')
+  const text = await generateRaw(messages, userId, 'create', input.connectionId)
   const parsed = parseCardDraft(text)
   if (!parsed) {
     throw new Error(
@@ -154,6 +158,72 @@ export async function draftCard(input: {
         : 'Their library has no tag pattern to speak of yet.',
   }
   return { draft: parsed, context }
+}
+
+export const MAX_SURPRISE_CARDS = 5
+
+export function clampSurpriseCount(raw: unknown): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 1
+  return Math.min(MAX_SURPRISE_CARDS, Math.max(1, Math.round(n)))
+}
+
+/**
+ * Invents cards from the shape of the library and saves every one of them.
+ * No seed, no review step: the point is that they land in the library.
+ */
+export async function surpriseCards(
+  input: { count: number; connectionId?: string | null },
+  userId?: string,
+): Promise<CreateCardBatchResult> {
+  const count = clampSurpriseCount(input.count)
+  const all = await getLibrary(userId)
+  const patterns = analyzeTagPatterns(all)
+  const existingNames = [
+    ...new Set(
+      all
+        .map((c) => String(c.name || '').trim())
+        .filter((n) => n.length > 0),
+    ),
+  ].slice(0, 40)
+  const taken = new Set(existingNames.map((n) => n.toLowerCase()))
+
+  const messages = buildSurpriseCardMessages({
+    count,
+    patterns,
+    existingNames,
+  })
+  const text = await generateRaw(messages, userId, 'create', input.connectionId)
+  const drafts = parseCardDraftBatch(text, count)
+  if (drafts.length === 0) {
+    throw new Error(
+      'I could not dream up cards this time. Give it another go in a moment.',
+    )
+  }
+
+  const cards: CreateCardResult[] = []
+  for (const draft of drafts) {
+    const name = draft.name.trim()
+    if (!name || taken.has(name.toLowerCase())) continue
+    try {
+      const result = await createCardFromDraft(
+        { draft, generateAvatar: true },
+        userId,
+      )
+      cards.push(result)
+      taken.add(name.toLowerCase())
+    } catch {
+      // One bad card does not sink the batch.
+    }
+  }
+
+  if (cards.length === 0) {
+    throw new Error(
+      'I wrote drafts but none of them would save. Try one card at a time instead.',
+    )
+  }
+
+  return { cards, requested: count, failed: Math.max(0, count - cards.length) }
 }
 
 export async function generateCharacterImages(input: {
@@ -179,7 +249,7 @@ export async function generateCharacterImages(input: {
   }
   const imageIds: string[] = []
   for (const prompt of prompts) {
-    const img = await generateCharacterImage({
+    const img = await safeGenerateCharacterImage({
       prompt,
       ownerCharacterId: char.id,
       userId: input.userId,
@@ -205,6 +275,19 @@ async function generateCharacterImage(input: {
   }
 }
 
+async function safeGenerateCharacterImage(input: {
+  prompt: string
+  ownerCharacterId?: string
+  userId?: string
+}): Promise<{ imageDataUrl: string; imageId?: string }> {
+  try {
+    return await generateCharacterImage(input)
+  } catch {
+    // The card is already saved. A failed picture must not undo that.
+    return { imageDataUrl: '' }
+  }
+}
+
 function dataUrlToBytes(dataUrl: string): Uint8Array {
   const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
   const bin = typeof atob === 'function' ? atob(base64) : ''
@@ -218,7 +301,8 @@ export async function createCardFromDraft(input: {
   generateAvatar?: boolean
   generateGallery?: boolean
   generateGreetings?: boolean
-}, userId?: string): Promise<CreateCardResult> {  const draft = input.draft
+}, userId?: string): Promise<CreateCardResult> {
+  const draft = input.draft
   const created = await spindle.characters.create(
     {
       name: draft.name,
@@ -242,7 +326,7 @@ export async function createCardFromDraft(input: {
   const images: CreateCardImages = { avatar: null, gallery: [], greetings: [] }
 
   if (input.generateAvatar !== false && created.id) {
-    const avatarImage = await generateCharacterImage({
+    const avatarImage = await safeGenerateCharacterImage({
       prompt: `Avatar illustration of ${draft.name}: ${draft.personality || draft.description || draft.scenario}`,
       ownerCharacterId: created.id,
       userId,
@@ -264,7 +348,7 @@ export async function createCardFromDraft(input: {
       `Portrait illustration for ${draft.name}: ${draft.personality || draft.description || draft.scenario}`,
     ]
     for (const prompt of scenes) {
-      const img = await generateCharacterImage({
+      const img = await safeGenerateCharacterImage({
         prompt,
         ownerCharacterId: created.id,
         userId,
@@ -278,7 +362,7 @@ export async function createCardFromDraft(input: {
       .map((g) => String(g || '').trim())
       .filter((g) => g.length > 0)
     for (const greeting of greetings) {
-      const img = await generateCharacterImage({
+      const img = await safeGenerateCharacterImage({
         prompt: `Greeting illustration for ${draft.name}: ${greeting}`,
         ownerCharacterId: created.id,
         userId,

@@ -29,9 +29,13 @@ async function quietGenerate(
   messages: Array<{ role: string; content: string }>,
   action: LlmAction,
   userId?: string,
+  connectionOverride?: string | null,
 ): Promise<{ content: string; model: string | null }> {
   const settings = await getSettings()
-  const connectionId = resolveConnectionId(settings, action)
+  const connectionId =
+    connectionOverride === undefined
+      ? resolveConnectionId(settings, action)
+      : connectionOverride
   try {
     const result = (await spindle.generate.quiet({
       type: 'quiet',
@@ -200,7 +204,8 @@ export async function generateRaw(
   messages: Array<{ role: string; content: string }>,
   userId?: string,
   action: LlmAction = 'search',
+  connectionId?: string | null,
 ): Promise<string> {
-  const { content } = await quietGenerate(messages, action, userId)
+  const { content } = await quietGenerate(messages, action, userId, connectionId)
   return content
 }

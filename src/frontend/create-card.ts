@@ -1,16 +1,37 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
-import type { CharacterDraft, CharacterSummary, CreateCardImages } from '../shared/types'
+import type {
+  CharacterDraft,
+  CharacterSummary,
+  ConnectionInfo,
+  CreateCardImages,
+  CreateCardResult,
+} from '../shared/types'
 import { createAriAvatarEl } from './ari-avatar'
 import type { AriStore } from './ari-store'
 import { icons } from './icons'
-import { createIntro, CREATE_LOADING, CREATE_SAVED } from './phrases'
+import {
+  createIntro,
+  CREATE_LOADING,
+  CREATE_SAVED,
+  CREATE_SURPRISE_LOADING,
+} from './phrases'
 import { openQuickView } from './quick-view'
 import type { RpcClient } from './rpc-client'
 import { art, button, errorMessage, h, loadingFrom, tagRow } from './ui'
 
-type CreateView = 'form' | 'drafting' | 'draft' | 'creating' | 'created'
+type CreateView =
+  | 'form'
+  | 'drafting'
+  | 'draft'
+  | 'creating'
+  | 'created'
+  | 'surprising'
+  | 'batch'
 
 type CreatedInfo = { character: CharacterSummary; images: CreateCardImages }
+
+const MAX_SURPRISE_CARDS = 5
+const DEFAULT_SURPRISE_CARDS = 3
 
 export function mountCreateCard(deps: {
   ctx: SpindleFrontendContext
@@ -25,9 +46,84 @@ export function mountCreateCard(deps: {
   let draft: CharacterDraft | null = null
   let contextSourceId: string | null = null
   let created: CreatedInfo | null = null
+  let batch: CreateCardResult[] = []
+  let batchFailed = 0
+  let count = DEFAULT_SURPRISE_CARDS
+  let modelValue = ''
+  let connections: ConnectionInfo[] = []
+  let autoSave = false
   let busy = false
   let error: string | null = null
   let runToken = 0
+
+  const autoSaveCb = h('input', {
+    type: 'checkbox',
+    class: 'll-switch',
+    'aria-label': 'Auto-save drafts',
+    onchange: () => {
+      autoSave = autoSaveCb.checked
+    },
+  })
+
+  // One live select each, reused across renders so choices survive redraws.
+  const modelSelect = h('select', {
+    class: 'll-select',
+    'aria-label': 'Drafting model',
+    onchange: () => {
+      modelValue = modelSelect.value
+    },
+  })
+  modelSelect.append(h('option', { value: '', text: 'Default connection' }))
+
+  const countSelect = h(
+    'select',
+    {
+      class: 'll-select ll-create-count',
+      'aria-label': 'How many cards',
+      onchange: () => {
+        count = normalizeCount(countSelect.value)
+      },
+    },
+    Array.from({ length: MAX_SURPRISE_CARDS }, (_, i) =>
+      h('option', {
+        value: String(i + 1),
+        text: `${i + 1} ${i === 0 ? 'card' : 'cards'}`,
+      }),
+    ),
+  )
+  countSelect.value = String(count)
+
+  function normalizeCount(raw: unknown): number {
+    const n = Number(raw)
+    if (!Number.isFinite(n)) return DEFAULT_SURPRISE_CARDS
+    return Math.min(MAX_SURPRISE_CARDS, Math.max(1, Math.round(n)))
+  }
+
+  async function loadConnections(): Promise<void> {
+    try {
+      const res = await rpc.request({ type: 'list_connections' })
+      connections = res.connections
+    } catch {
+      connections = []
+    }
+    const current = modelSelect.value
+    modelSelect.replaceChildren(
+      h('option', { value: '', text: 'Default connection' }),
+      ...connections.map((c) =>
+        h('option', {
+          value: c.id,
+          text: `${c.name}${c.model ? ` · ${c.model}` : ''}${c.is_default ? ' (default)' : ''}${c.has_api_key ? '' : ' (no API key)'}`,
+        }),
+      ),
+    )
+    modelSelect.value = current
+    modelValue = current
+  }
+
+  /** Only send a connection when one was actually picked. */
+  function connectionArg(): { connectionId?: string } {
+    return modelValue ? { connectionId: modelValue } : {}
+  }
 
   function render(): void {
     root.replaceChildren(buildView())
@@ -41,6 +137,17 @@ export function mountCreateCard(deps: {
   function clearError(): void {
     error = null
     render()
+  }
+
+  function modelField(): HTMLElement {
+    return h('div', { class: 'll-create-section' }, [
+      h('div', { class: 'll-field-label', text: 'Drafting model' }),
+      h('div', {
+        class: 'll-muted',
+        text: 'Which connection writes the card. Default follows your Settings.',
+      }),
+      modelSelect,
+    ])
   }
 
   function formView(): HTMLElement {
@@ -59,6 +166,11 @@ export function mountCreateCard(deps: {
       onClick: () => void startDraft(false),
     })
     draftBtn.classList.add('ll-btn-block')
+    const surpriseBtn = button('Surprise me', {
+      kind: 'primary',
+      icon: icons.dice(16),
+      onClick: () => void runSurprise(),
+    })
     return h('div', { class: 'll-page-body' }, [
       h('div', { class: 'll-intro' }, [
         createAriAvatarEl(ari.url, 'll-avatar ll-avatar-lg'),
@@ -67,16 +179,42 @@ export function mountCreateCard(deps: {
       h('div', { class: 'll-form' }, [
         h('div', {}, [
           h('div', { class: 'll-field-label', text: 'The seed' }),
-          h('div', { class: 'll-muted', text: 'One line is plenty. A vibe, a premise, a what if.' }),
+          h('div', {
+            class: 'll-muted',
+            text: 'One line is plenty. A vibe, a premise, a what if.',
+          }),
           seedInput,
         ]),
         draftBtn,
+        h('label', { class: 'll-switch-row' }, [
+          h('div', {}, [
+            h('div', { class: 'll-field-label', text: 'Auto-save drafts' }),
+            h('div', {
+              class: 'll-muted',
+              text: 'Skip the review and save the card the moment Ari writes it.',
+            }),
+          ]),
+          autoSaveCb,
+        ]),
+        h('div', { class: 'll-create-section' }, [
+          h('div', { class: 'll-field-label', text: 'Surprise me' }),
+          h('div', {
+            class: 'll-muted',
+            text: 'No seed needed. Ari invents cards from the shape of your library and saves them straight away.',
+          }),
+          h('div', { class: 'll-create-row' }, [countSelect, surpriseBtn]),
+        ]),
+        modelField(),
       ]),
     ])
   }
 
   function draftingView(): HTMLElement {
     return loadingFrom(ari, CREATE_LOADING)
+  }
+
+  function surprisingView(): HTMLElement {
+    return loadingFrom(ari, CREATE_SURPRISE_LOADING)
   }
 
   function draftView(): HTMLElement {
@@ -114,7 +252,10 @@ export function mountCreateCard(deps: {
           ...greetings.map(
             (g, i) =>
               h('div', { class: 'll-create-greeting' }, [
-                h('div', { class: 'll-create-greeting-index', text: `Greeting ${i + 1}` }),
+                h('div', {
+                  class: 'll-create-greeting-index',
+                  text: `Greeting ${i + 1}`,
+                }),
                 h('div', { class: 'll-create-field-value', text: g }),
               ]),
           ),
@@ -125,7 +266,9 @@ export function mountCreateCard(deps: {
       h('div', { class: 'll-create-draft-head' }, [
         createAriAvatarEl(ari.url, 'll-avatar ll-avatar-sm'),
         h('div', { class: 'll-create-draft-title', text: `Draft for ${d.name}` }),
-        h('div', { class: 'll-muted' }, [contextSourceId ? 'Based on one of your cards.' : 'Fresh from the seed.']),
+        h('div', { class: 'll-muted' }, [
+          contextSourceId ? 'Based on one of your cards.' : 'Fresh from the seed.',
+        ]),
       ]),
       ...fields,
       tagRow(d.tags, 8),
@@ -148,24 +291,35 @@ export function mountCreateCard(deps: {
     const c = created?.character
     if (!created || !c) {
       return h('div', { class: 'll-page-body' }, [
-        h('div', { class: 'll-error', text: 'I could not save that card. Try the draft again.' }),
+        h('div', {
+          class: 'll-error',
+          text: 'I could not save that card. Try the draft again.',
+        }),
       ])
     }
     const images = created.images
     const imageNotes: Array<HTMLElement> = [
-      h(
-        'div',
-        { class: 'll-muted', text: images.avatar ? 'Avatar generated and saved.' : 'Avatar was not generated.' },
-      ),
+      h('div', {
+        class: 'll-muted',
+        text: images.avatar
+          ? 'Avatar generated and saved.'
+          : 'Avatar was not generated.',
+      }),
     ]
     if (images.gallery.length > 0) {
       imageNotes.push(
-        h('div', { class: 'll-muted', text: `Gallery images saved: ${images.gallery.length}.` }),
+        h('div', {
+          class: 'll-muted',
+          text: `Gallery images saved: ${images.gallery.length}.`,
+        }),
       )
     }
     if (images.greetings.length > 0) {
       imageNotes.push(
-        h('div', { class: 'll-muted', text: `Greeting images saved: ${images.greetings.length}.` }),
+        h('div', {
+          class: 'll-muted',
+          text: `Greeting images saved: ${images.greetings.length}.`,
+        }),
       )
     }
     const actions = [
@@ -218,10 +372,90 @@ export function mountCreateCard(deps: {
     ])
   }
 
+  function batchView(): HTMLElement {
+    if (batch.length === 0) {
+      return h('div', { class: 'll-page-body' }, [
+        h('div', {
+          class: 'll-error',
+          text: 'I could not save those cards. Try again.',
+        }),
+      ])
+    }
+    const rows = batch.map(({ character, images }) => {
+      const meta = [
+        character.tags.slice(0, 4).join(' · '),
+        images.avatar ? 'avatar saved' : 'no avatar',
+      ]
+        .filter((x) => x.length > 0)
+        .join(' · ')
+      return h('div', { class: 'll-create-batch-row' }, [
+        art(character, 'll-qv-art ll-create-batch-art'),
+        h('div', { class: 'll-create-batch-body' }, [
+          h('div', { class: 'll-create-saved-title', text: character.name }),
+          h('div', { class: 'll-muted', text: meta }),
+        ]),
+        button('Open', {
+          kind: 'ghost',
+          icon: icons.search(16),
+          onClick: () =>
+            void deps.openQuickView(
+              { ctx, rpc, ari },
+              { characterId: character.id },
+            ),
+        }),
+      ])
+    })
+    return h('div', { class: 'll-page-body' }, [
+      h('div', { class: 'll-create-draft-head' }, [
+        createAriAvatarEl(ari.url, 'll-avatar ll-avatar-sm'),
+        h('div', {}, [
+          h('div', {
+            class: 'll-create-draft-title',
+            text: `Saved ${batch.length} new ${batch.length === 1 ? 'card' : 'cards'}`,
+          }),
+          h('div', {
+            class: 'll-muted',
+            text:
+              batchFailed > 0
+                ? `${batchFailed} did not make it. These are in your library now.`
+                : 'All of them are in your library now.',
+          }),
+        ]),
+      ]),
+      h('div', { class: 'll-create-batch' }, rows),
+      h('div', { class: 'll-btn-row' }, [
+        button('Surprise me with more', {
+          kind: 'primary',
+          icon: icons.dice(16),
+          onClick: () => void runSurprise(),
+        }),
+        button('Done', {
+          kind: 'ghost',
+          onClick: () => {
+            batch = []
+            batchFailed = 0
+            view = 'form'
+            clearError()
+          },
+        }),
+      ]),
+    ])
+  }
+
   function buildView(): HTMLElement {
     if (error) {
-      const body = view === 'form' ? formView() : view === 'draft' ? draftView() : view === 'created' ? createdView() : draftingView()
-      return h('div', { class: 'll-page-body' }, [h('div', { class: 'll-error', text: error }), body])
+      const body =
+        view === 'created'
+          ? createdView()
+          : view === 'batch'
+            ? batchView()
+            : view === 'draft'
+              ? draftView()
+              : formView()
+      return h('div', { class: 'll-page-body' }, [
+        h('div', { class: 'll-error', text: error }),
+        body,
+      ])
     }
     switch (view) {
       case 'drafting':
@@ -232,6 +466,10 @@ export function mountCreateCard(deps: {
         return draftingView()
       case 'created':
         return createdView()
+      case 'surprising':
+        return surprisingView()
+      case 'batch':
+        return batchView()
       default:
         return formView()
     }
@@ -251,15 +489,22 @@ export function mountCreateCard(deps: {
         seed,
         ...(contextSourceId ? { characterId: contextSourceId } : {}),
         ...(revision && draft ? { draft } : {}),
+        ...connectionArg(),
       })
       if (token !== runToken) return
       draft = res.draft
       contextSourceId = res.context.sourceCharacterId
       view = 'draft'
+      busy = false
+      if (autoSave) {
+        await runCreate()
+        return
+      }
       render()
     } catch (e) {
       if (token !== runToken) return
       busy = false
+      view = 'form'
       showError(errorMessage(e, 'I could not draft that card. Try again.'))
     }
     if (token === runToken) busy = false
@@ -288,7 +533,41 @@ export function mountCreateCard(deps: {
     } catch (e) {
       if (token !== runToken) return
       busy = false
+      view = 'draft'
       showError(errorMessage(e, 'I could not save that card. Try again.'))
+      return
+    }
+    if (token === runToken) busy = false
+  }
+
+  async function runSurprise(): Promise<void> {
+    if (busy) return
+    busy = true
+    runToken++
+    const token = runToken
+    error = null
+    batch = []
+    batchFailed = 0
+    view = 'surprising'
+    render()
+    try {
+      const res = await rpc.request({
+        type: 'create_card_surprise',
+        count,
+        ...connectionArg(),
+      })
+      if (token !== runToken) return
+      batch = res.cards
+      batchFailed = res.failed
+      view = 'batch'
+      render()
+    } catch (e) {
+      if (token !== runToken) return
+      busy = false
+      view = 'form'
+      showError(
+        errorMessage(e, 'I could not surprise you this time. Try again.'),
+      )
       return
     }
     if (token === runToken) busy = false
@@ -308,7 +587,9 @@ export function mountCreateCard(deps: {
       if (token !== runToken) return
       created.images = {
         ...created.images,
-        ...(kind === 'gallery' ? { gallery: res.imageIds } : { greetings: res.imageIds }),
+        ...(kind === 'gallery'
+          ? { gallery: res.imageIds }
+          : { greetings: res.imageIds }),
       }
       render()
     } catch (e) {
@@ -320,6 +601,7 @@ export function mountCreateCard(deps: {
   }
 
   render()
+  void loadConnections()
 
   return {
     destroy: () => {

@@ -4,6 +4,7 @@ import type {
   ConnectionInfo,
   CreateCardContext,
   CreateCardImages,
+  CreateCardResult,
   Settings,
   TinderCardView,
   TinderMode,
@@ -63,6 +64,7 @@ export type FrontendToBackend =
       seed: string
       characterId?: string
       draft?: CharacterDraft
+      connectionId?: string | null
     })
   | (RequestBase & {
       type: 'create_card'
@@ -75,6 +77,11 @@ export type FrontendToBackend =
       type: 'create_card_generate_images'
       characterId: string
       kind: 'gallery' | 'greetings'
+    })
+  | (RequestBase & {
+      type: 'create_card_surprise'
+      count: number
+      connectionId?: string | null
     })
 
 export type BackendToFrontend =
@@ -205,6 +212,13 @@ export type BackendToFrontend =
       requestId: string
       characterId: string
       imageIds: string[]
+    }
+  | {
+      type: 'create_card_surprise_result'
+      requestId: string
+      cards: CreateCardResult[]
+      requested: number
+      failed: number
     }
   | {
       type: 'warm_library_progress'

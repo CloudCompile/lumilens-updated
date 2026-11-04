@@ -22,7 +22,7 @@ import {
 } from './generate'
 import { noteUserContext } from './import-warm'
 import { findCards, surpriseCharacter } from './picker'
-import { createCardFromDraft, draftCard, generateCharacterImages } from './create-card'
+import { createCardFromDraft, draftCard, generateCharacterImages, surpriseCards } from './create-card'
 import { getSettings, setSettings } from './settings'
 import {
   getActiveTinderMode,
@@ -175,7 +175,12 @@ const handlers: { [K in RequestType]: Handler<K> } = {
   },
   create_card_draft: async (msg, uid) => {
     const { draft, context } = await draftCard(
-      { seed: msg.seed, characterId: msg.characterId, draft: msg.draft },
+      {
+        seed: msg.seed,
+        characterId: msg.characterId,
+        draft: msg.draft,
+        connectionId: msg.connectionId,
+      },
       uid,
     )
     return { type: 'create_card_draft_result', draft, context }
@@ -206,6 +211,18 @@ const handlers: { [K in RequestType]: Handler<K> } = {
       type: 'create_card_generate_images_result',
       characterId: msg.characterId,
       imageIds,
+    }
+  },
+  create_card_surprise: async (msg, uid) => {
+    const batch = await surpriseCards(
+      { count: msg.count, connectionId: msg.connectionId },
+      uid,
+    )
+    return {
+      type: 'create_card_surprise_result',
+      cards: batch.cards,
+      requested: batch.requested,
+      failed: batch.failed,
     }
   },
 }

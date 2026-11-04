@@ -129,7 +129,7 @@ export function registerAriDrawerTab(opts: {
         'create',
         icons.wand(22),
         'Create card',
-        'I draft a new card from your library and your seed.',
+        'I draft a new card from your seed, or invent a few on my own.',
       ),
       menuItem(
         'picker',
@@ -170,7 +170,7 @@ export function registerAriDrawerTab(opts: {
     })
     return { destroy: created.destroy }
   }, {
-    description: 'Tell me the idea. I will draft it from your library and your history.',
+    description: 'Tell me the idea, or let me surprise you with a handful.',
   })
 
   subPage('picker', 'Card Picker', (body) => {
