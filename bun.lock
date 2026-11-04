@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "lumilens-updated",
+      "name": "lumilens_updated",
       "devDependencies": {
         "@types/bun": "latest",
         "happy-dom": "^20.14.6",
