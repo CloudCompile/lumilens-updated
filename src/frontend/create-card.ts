@@ -319,6 +319,8 @@ export function mountCreateCard(deps: {
     }
   }
 
+  render()
+
   return {
     destroy: () => {
       runToken++
